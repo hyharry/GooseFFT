@@ -88,7 +88,7 @@ II   = dyad22(I,I)
 Ghat4  = np.zeros([3,3,3,3,Nx,Ny,Nz])                # projection operator
 x      = np.zeros([3      ,Nx,Ny,Nz],dtype='int64')  # position vectors
 q      = np.zeros([3      ,Nx,Ny,Nz],dtype='int64')  # frequency vectors
-delta  = lambda i,j: np.float(i==j)                  # Dirac delta function
+delta  = lambda i,j: np.float_(i==j)                  # Dirac delta function
 # - set "x" as position vector of all grid-points   [grid of vector-components]
 x[0],x[1],x[2] = np.mgrid[:Nx,:Ny,:Nz]
 # - convert positions "x" to frequencies "q"        [grid of vector-components]
@@ -97,7 +97,7 @@ for i in range(3):
     q[i] = freq[x[i]]
 # - compute "Q = ||q||", and "norm = 1/Q" being zero for the mean (Q==0)
 #   NB: avoid zero division
-q       = q.astype(np.float)
+q       = q.astype(np.float_)
 Q       = dot11(q,q)
 Z       = Q==0
 Q[Z]    = 1.
@@ -163,7 +163,7 @@ def constitutive(F,F_t,be_t,ep_t):
     C4ep     = ((K-2./3.*mu)/2.+a0*mu)*II+(1.-3.*a0)*mu*I4s+2.*mu*(a0-a1)*dyad22(N_s,N_s)
     dlnbe4_s = dln2_d2(be_s)
     dbe4_s   = 2.*dot42(I4s,be_s)
-    K4       = (C4e/2.)*(phi_s<=0.).astype(np.float)+C4ep*(phi_s>0.).astype(np.float)
+    K4       = (C4e/2.)*(phi_s<=0.).astype(np.float_)+C4ep*(phi_s>0.).astype(np.float_)
     K4       = ddot44(K4,ddot44(dlnbe4_s,dbe4_s))
     K4       = dot42(-I4rt,tau)+K4
     K4       = dot42(dot24(inv2(F),K4),trans2(inv2(F)))

@@ -5,7 +5,8 @@ import itertools
 # ----------------------------------- GRID ------------------------------------
 
 ndim   = 3   # number of dimensions
-N      = 31  # number of voxels (assumed equal for all directions)
+# N      = 31  # number of voxels (assumed equal for all directions)
+N      = 15  # number of voxels (assumed equal for all directions)
 
 # ---------------------- PROJECTION, TENSORS, OPERATIONS ----------------------
 
@@ -31,7 +32,7 @@ II     = dyad22(I,I)
 # projection operator                                         [grid of tensors]
 # NB can be vectorized (faster, less readable), see: "elasto-plasticity.py"
 # - support function / look-up list / zero initialize
-delta  = lambda i,j: np.float(i==j)            # Dirac delta function
+delta  = lambda i,j: np.float_(i==j)            # Dirac delta function
 freq   = np.arange(-(N-1)/2.,+(N+1)/2.)        # coordinate axis -> freq. axis
 Ghat4  = np.zeros([ndim,ndim,ndim,ndim,N,N,N]) # zero initialize
 # - compute
@@ -79,6 +80,8 @@ DbarF = np.zeros([ndim,ndim,N,N,N]); DbarF[0,1] += 1.0
 # initial residual: distribute "barF" over grid using "K4"
 b     = -G_K_dF(DbarF)
 F    +=         DbarF
+print(F[:,:,1,1,1])
+print(F[:,:,1,-5,1])
 Fn    = np.linalg.norm(F)
 iiter = 0
 
