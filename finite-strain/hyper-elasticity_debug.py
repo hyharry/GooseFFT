@@ -112,10 +112,25 @@ dot_F = np.array([
 ])
 
 ##### bc_stress from DAMASK #####
+barP = np.zeros([ndim,ndim,Nx,Ny,Nz])
+dot_F = np.array([
+    [0,0,0],
+    [0,0,0],
+    [0,0,0]
+])
+
 delta_P_0 = 2.5e6
 delta_P_1 = 5.0e6
 delta_P_2 = 2.5e6
+delta_P = np.zeros((3,3))
+delta_P[0,0] = delta_P_0
+delta_P[1,1] = delta_P_1
+delta_P[2,2] = delta_P_2
+delta_P *= 100
 
+##### adjust zeroth frequency! 
+for i, j, l, m in itertools.product(range(3), repeat=4):
+    Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2] = delta(i,m)*delta(j,l)
 
 t = 0.4
 N = 8 
@@ -124,9 +139,11 @@ dt = t/N
 
 for inc in range(N):
     DbarF_curr = DbarF + dt * dot_F[:,:,np.newaxis,np.newaxis,np.newaxis]
+    print(np.linalg.norm(DbarF_curr))
+    barP_curr = barP + (inc+1) * delta_P[:,:,np.newaxis,np.newaxis,np.newaxis]
 
     # initial residual: distribute "barF" over grid using "K4"
-    b     = -G_K_dF(DbarF_curr)
+    b     = -G_K_dF(DbarF_curr) + G(barP_curr)
     F    +=         DbarF_curr
     Fn    = np.linalg.norm(F)
     newton_i = 0
@@ -135,20 +152,22 @@ for inc in range(N):
     # iterate as long as the iterative update does not vanish
     while True:
         dFm,_ = sp.cg(tol=1.e-8,
-        # dFm,_ = sp.gmres(tol=1.e-8,
+        #dFm,_ = sp.gmres(tol=1.e-8,
         A = sp.LinearOperator(shape=(F.size,F.size),matvec=G_K_dF,dtype='float'),
         b = b,
         callback=ksp_callback, #### cg counter
         )                                        # solve linear system using CG
         F    += dFm.reshape(ndim,ndim,Nx,Ny,Nz)  # update DOFs (array -> tens.grid)
         P,K4  = constitutive(F)                  # new residual stress and tangent
-        b     = -G(P)                            # convert res.stress to residual
+        # b     = -G(P)                            # convert res.stress to residual
+        b     = -G(P) + G(barP_curr)
         
         dF_norm_rel = np.linalg.norm(dFm)/Fn
         rhs_norm = np.linalg.norm(b)
-        print(f'|dF|/|F| = {dF_norm_rel:8.2e}, |rhs| = |G(P)| = {rhs_norm:8.2e}, ksp iter = {ksp_i[0]}') 
         newton_i += 1
+        print(f'newton {newton_i} end: |dF|/|F| = {dF_norm_rel:8.2e}, |rhs| = |G(P)| = {rhs_norm:8.2e}, ksp iter = {ksp_i[0]}') 
         if np.linalg.norm(dFm)/Fn<1.e-5 : break # check convergence
     
-    print(f'current F_bar = {F.mean(axis=(2,3,4))}')
+    print(f'current F_bar = \n{F.mean(axis=(2,3,4))}')
+    print(f'current P_bar = \n{P.mean(axis=(2,3,4))}')
     print(f'=> load inc {inc+1} done with {newton_i} newton iter!')
