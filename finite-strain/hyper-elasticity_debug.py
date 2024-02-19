@@ -9,7 +9,11 @@ ndim   = 3   # number of dimensions
 #N      = 3  # Y: mini grid
 Nx = 3
 Ny = 3
-Nz = 1
+Nz = 3
+
+# Nx = 5
+# Ny = 5
+# Nz = 5
 shape  = [Nx,Ny,Nz]  # number of voxels as list: [Nx,Ny,Nz]
 
 # ---------------------- PROJECTION, TENSORS, OPERATIONS ----------------------
@@ -73,14 +77,13 @@ G_K_dF = lambda dFm: G(K_dF(dFm))
 
 # phase indicator: cubical inclusion of volume fraction (9**3)/(31**3)
 # phase  = np.zeros([N,N,N]); phase[-9:,:9,-9:] = 1.
-phase  = np.zeros(shape); phase[-1:,:1,-1:] = 1.  # Y: single vox incl
-print(phase[:,0,:])
-print(phase[:,1,:])
-print(phase[:,2,:])
+phase  = np.zeros(shape); phase[1,1,1] = 1.  # Y: single vox incl at center of 3x3x3
 # material parameters + function to convert to grid of scalars
 param  = lambda M0,M1: M0*np.ones(shape)*(1.-phase)+M1*np.ones(shape)*phase
-K      = param(0.833,8.33)  # bulk  modulus                   [grid of scalars]
-mu     = param(0.386,3.86)  # shear modulus                   [grid of scalars]
+# K      = param(0.833,8.33)  # bulk  modulus                   [grid of scalars]
+# mu     = param(0.386,3.86)  # shear modulus                   [grid of scalars]
+K      = param(70e9,70e8)  # bulk  modulus                   approx. Alu
+mu     = param(25e9,25e8)  # shear modulus                   approx. Alu
 
 # constitutive model: grid of "F" -> grid of "P", "K4"        [grid of tensors]
 def constitutive(F):
@@ -95,26 +98,57 @@ def constitutive(F):
 # initialize deformation gradient, and stress/stiffness       [grid of tensors]
 F     = np.array(I,copy=True)
 P,K4  = constitutive(F)
+DbarF = np.zeros([ndim,ndim,Nx,Ny,Nz])
 
-# set macroscopic loading
-DbarF = np.zeros([ndim,ndim,Nx,Ny,Nz]); DbarF[0,1] += 1.0
+ksp_i = [0] # hack for remember it_n during call
+def ksp_callback(xk):
+    ksp_i[0] += 1
 
-# initial residual: distribute "barF" over grid using "K4"
-b     = -G_K_dF(DbarF)
-F    +=         DbarF
-print(F[:,:,0,0,0])
-Fn    = np.linalg.norm(F)
-iiter = 0
+##### bc_strain from DAMASK #####
+dot_F = np.array([
+    [0,0,0],
+    [0,1e-3,0],
+    [0,0,0]
+])
 
-# iterate as long as the iterative update does not vanish
-while True:
-    dFm,_ = sp.cg(tol=1.e-8,
-      A = sp.LinearOperator(shape=(F.size,F.size),matvec=G_K_dF,dtype='float'),
-      b = b,
-    )                                        # solve linear system using CG
-    F    += dFm.reshape(ndim,ndim,Nx,Ny,Nz)     # update DOFs (array -> tens.grid)
-    P,K4  = constitutive(F)                  # new residual stress and tangent
-    b     = -G(P)                            # convert res.stress to residual
-    print('%10.2e'%(np.linalg.norm(dFm)/Fn)) # print residual to the screen
-    if np.linalg.norm(dFm)/Fn<1.e-5 and iiter>0: break # check convergence
-    iiter += 1
+##### bc_stress from DAMASK #####
+delta_P_0 = 2.5e6
+delta_P_1 = 5.0e6
+delta_P_2 = 2.5e6
+
+
+t = 0.4
+N = 8 
+dt = t/N
+
+
+for inc in range(N):
+    DbarF_curr = DbarF + dt * dot_F[:,:,np.newaxis,np.newaxis,np.newaxis]
+
+    # initial residual: distribute "barF" over grid using "K4"
+    b     = -G_K_dF(DbarF_curr)
+    F    +=         DbarF_curr
+    Fn    = np.linalg.norm(F)
+    newton_i = 0
+    ksp_i = [0]
+
+    # iterate as long as the iterative update does not vanish
+    while True:
+        dFm,_ = sp.cg(tol=1.e-8,
+        # dFm,_ = sp.gmres(tol=1.e-8,
+        A = sp.LinearOperator(shape=(F.size,F.size),matvec=G_K_dF,dtype='float'),
+        b = b,
+        callback=ksp_callback, #### cg counter
+        )                                        # solve linear system using CG
+        F    += dFm.reshape(ndim,ndim,Nx,Ny,Nz)  # update DOFs (array -> tens.grid)
+        P,K4  = constitutive(F)                  # new residual stress and tangent
+        b     = -G(P)                            # convert res.stress to residual
+        
+        dF_norm_rel = np.linalg.norm(dFm)/Fn
+        rhs_norm = np.linalg.norm(b)
+        print(f'|dF|/|F| = {dF_norm_rel:8.2e}, |rhs| = |G(P)| = {rhs_norm:8.2e}, ksp iter = {ksp_i[0]}') 
+        newton_i += 1
+        if np.linalg.norm(dFm)/Fn<1.e-5 : break # check convergence
+    
+    print(f'current F_bar = {F.mean(axis=(2,3,4))}')
+    print(f'=> load inc {inc+1} done with {newton_i} newton iter!')
