@@ -128,8 +128,27 @@ delta_P[1,1] = delta_P_1
 delta_P[2,2] = delta_P_2
 delta_P *= 100
 
-##### adjust zeroth frequency! 
+##### adjust zeroth frequency -> for all stress component! ij
+# for i, j, l, m in itertools.product(range(3), repeat=4):
+#     Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2] = delta(i,m)*delta(j,l)
+
+##### bc_mix from DAMASK #####
+barP = np.zeros([ndim,ndim,Nx,Ny,Nz])
+dot_F = np.array([
+    [0,0,0],
+    [0,1e-3,0],
+    [0,0,0]
+])
+
+delta_P_0 = 0
+delta_P_2 = 0
+delta_P = np.zeros((3,3))
+delta_P[0,0] = delta_P_0
+delta_P[2,2] = delta_P_2
+
+##### adjust zeroth frequency -> only change the component with ij!!!
 for i, j, l, m in itertools.product(range(3), repeat=4):
+    if [i,j] != [0,0] or [i,j] != [2,2]: continue
     Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2] = delta(i,m)*delta(j,l)
 
 t = 0.4
