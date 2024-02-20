@@ -175,6 +175,20 @@ for i, j, l, m in itertools.product(range(3), repeat=4):
     if [i,j] == [0,0] or [i,j] == [1,1] or [i,j] == [2,2]:
         Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2] = delta(i,m)*delta(j,l)
 
+##### debug purpose (DAMASK G_conv) #####
+def G_dbg(A2, M_bc):
+    temp = ddot42(Ghat4,fft(A2))
+    temp[:,:,Nx//2,Ny//2,Nz//2] = M_bc
+    G_field = np.real( ifft( temp ) ).reshape(-1)
+    return G_field
+
+G_K_dF_dbg = lambda dFm, M_bc : G_dbg(K_dF(dFm), M_bc)
+
+def formResidual(F, P_aim):
+    tmp = K_dF(F)
+
+from functools import partial
+
 check = lambda dP: np.einsum('ijkl,lk->ij', Ghat4[:,:,:,:,1,1,1].reshape((3,3,3,3)), dP)
 
 t = 0.4
@@ -184,10 +198,12 @@ dt = t/N
 print("##################### sim run start #####################")
 
 for inc in range(N):
+    print(f"------------- inc {inc} ------------")
     DbarF_curr = DbarF + dt * dot_F[:,:,np.newaxis,np.newaxis,np.newaxis]
     barP_curr = barP + (inc+1) * delta_P[:,:,np.newaxis,np.newaxis,np.newaxis]
 
     # initial residual: distribute "barF" over grid using "K4"
+    tmp = K_dF(DbarF_curr)
     b     = -G_K_dF(DbarF_curr) + G(barP_curr)
     F    +=         DbarF_curr
     Fn    = np.linalg.norm(F)
@@ -206,12 +222,21 @@ for inc in range(N):
         P,K4  = constitutive(F)                  # new residual stress and tangent
         # b     = -G(P)                            # convert res.stress to residual
         b     = -G(P) + G(barP_curr)
-        print(check(P.mean(axis=(2,3,4))-barP_curr.mean(axis=(2,3,4)))/1e6)
+
+        # ^^^^^^^^^ dbg purpose ^^^^^^^^^
+        b_mean = b.reshape(ndim,ndim,Nx,Ny,Nz).mean(axis=(2,3,4))
+        Pav_Paim = P.mean(axis=(2,3,4))-barP_curr.mean(axis=(2,3,4))
+        print('P_aim', barP_curr.mean(axis=(2,3,4)))
+        print('P_av', P.mean(axis=(2,3,4)))
+        b_dbg = -G_dbg(P-barP_curr, Pav_Paim)
+        print(np.linalg.norm(b - b_dbg))
+        #print(check(P.mean(axis=(2,3,4))-barP_curr.mean(axis=(2,3,4)))/1e6)
+        #print((P.mean(axis=(2,3,4))-barP_curr.mean(axis=(2,3,4)))/1e6)
 
         dF_norm_rel = np.linalg.norm(dFm)/Fn
         rhs_norm = np.linalg.norm(b)
         newton_i += 1
-        # print(f'newton {newton_i} end: |dF|/|F| = {dF_norm_rel:8.2e}, |rhs| = |G(P)| = {rhs_norm:8.2e}, ksp iter = {ksp_i[0]}')
+        print(f'newton {newton_i} end: |dF|/|F| = {dF_norm_rel:8.2e}, |rhs| = |G(P)| = {rhs_norm:8.2e}, ksp iter = {ksp_i[0]}')
         if np.linalg.norm(dFm)/Fn<1.e-5 : break # check convergence
     
     # print(f'current F_bar = \n{F.mean(axis=(2,3,4))}')
