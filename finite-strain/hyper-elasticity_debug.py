@@ -146,19 +146,22 @@ delta_P = np.zeros((3,3))
 delta_P[0,0] = delta_P_0
 delta_P[2,2] = delta_P_2
 
-##### adjust zeroth frequency -> only change the component with ij!!!
+##### adjust zeroth frequency -> only change the component with ij defined by stress bc!!!
 for i, j, l, m in itertools.product(range(3), repeat=4):
-    if [i,j] != [0,0] or [i,j] != [2,2]: continue
-    Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2] = delta(i,m)*delta(j,l)
+    if [i,j] == [0,0] or [i,j] == [2,2]:
+        # print(f'change Ghat(q=0) for Ghat[{i},{j},{l},{m}]')
+        # print(f'vor  Ghat[{i},{j},{l},{m}]={Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2]}')
+        Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2] = delta(i,m)*delta(j,l)
+        # print(f'nach Ghat[{i},{j},{l},{m}]={Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2]}')
 
 t = 0.4
 N = 8 
 dt = t/N
 
+print("##################### sim run start #####################")
 
 for inc in range(N):
     DbarF_curr = DbarF + dt * dot_F[:,:,np.newaxis,np.newaxis,np.newaxis]
-    print(np.linalg.norm(DbarF_curr))
     barP_curr = barP + (inc+1) * delta_P[:,:,np.newaxis,np.newaxis,np.newaxis]
 
     # initial residual: distribute "barF" over grid using "K4"
@@ -184,9 +187,11 @@ for inc in range(N):
         dF_norm_rel = np.linalg.norm(dFm)/Fn
         rhs_norm = np.linalg.norm(b)
         newton_i += 1
-        print(f'newton {newton_i} end: |dF|/|F| = {dF_norm_rel:8.2e}, |rhs| = |G(P)| = {rhs_norm:8.2e}, ksp iter = {ksp_i[0]}') 
+        # print(f'newton {newton_i} end: |dF|/|F| = {dF_norm_rel:8.2e}, |rhs| = |G(P)| = {rhs_norm:8.2e}, ksp iter = {ksp_i[0]}')
         if np.linalg.norm(dFm)/Fn<1.e-5 : break # check convergence
     
-    print(f'current F_bar = \n{F.mean(axis=(2,3,4))}')
-    print(f'current P_bar = \n{P.mean(axis=(2,3,4))}')
+    # print(f'current F_bar = \n{F.mean(axis=(2,3,4))}')
+    # print(f'current P_bar = \n{P.mean(axis=(2,3,4))}')
     print(f'=> load inc {inc+1} done with {newton_i} newton iter!')
+
+print("##################### sim run done! #####################")
