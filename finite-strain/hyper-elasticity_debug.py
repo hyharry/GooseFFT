@@ -147,12 +147,35 @@ delta_P[0,0] = delta_P_0
 delta_P[2,2] = delta_P_2
 
 ##### adjust zeroth frequency -> only change the component with ij defined by stress bc!!!
+# for i, j, l, m in itertools.product(range(3), repeat=4):
+#     if [i,j] == [0,0] or [i,j] == [2,2]:
+#         # print(f'change Ghat(q=0) for Ghat[{i},{j},{l},{m}]')
+#         # print(f'vor  Ghat[{i},{j},{l},{m}]={Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2]}')
+#         Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2] = delta(i,m)*delta(j,l)
+#         # print(f'nach Ghat[{i},{j},{l},{m}]={Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2]}')
+
+##### bc_debug for DAMASK #####
+barP = np.zeros([ndim,ndim,Nx,Ny,Nz])
+dot_F = np.array([
+    [0,0,0],
+    [0,0,0],
+    [0,0,0]
+])
+
+delta_P_0 = 2.5e6
+delta_P_1 = 5.0e6
+delta_P_2 = 2.5e6
+delta_P = np.zeros((3,3))
+delta_P[0,0] = delta_P_0
+delta_P[1,1] = delta_P_1
+delta_P[2,2] = delta_P_2
+
+##### adjust zeroth frequency -> for all stress component! ij
 for i, j, l, m in itertools.product(range(3), repeat=4):
-    if [i,j] == [0,0] or [i,j] == [2,2]:
-        # print(f'change Ghat(q=0) for Ghat[{i},{j},{l},{m}]')
-        # print(f'vor  Ghat[{i},{j},{l},{m}]={Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2]}')
+    if [i,j] == [0,0] or [i,j] == [1,1] or [i,j] == [2,2]:
         Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2] = delta(i,m)*delta(j,l)
-        # print(f'nach Ghat[{i},{j},{l},{m}]={Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2]}')
+
+check = lambda dP: np.einsum('ijkl,lk->ij', Ghat4[:,:,:,:,1,1,1].reshape((3,3,3,3)), dP)
 
 t = 0.4
 N = 8 
@@ -183,7 +206,8 @@ for inc in range(N):
         P,K4  = constitutive(F)                  # new residual stress and tangent
         # b     = -G(P)                            # convert res.stress to residual
         b     = -G(P) + G(barP_curr)
-        
+        print(check(P.mean(axis=(2,3,4))-barP_curr.mean(axis=(2,3,4)))/1e6)
+
         dF_norm_rel = np.linalg.norm(dFm)/Fn
         rhs_norm = np.linalg.norm(b)
         newton_i += 1
@@ -191,7 +215,7 @@ for inc in range(N):
         if np.linalg.norm(dFm)/Fn<1.e-5 : break # check convergence
     
     # print(f'current F_bar = \n{F.mean(axis=(2,3,4))}')
-    # print(f'current P_bar = \n{P.mean(axis=(2,3,4))}')
+    print(f'current P_bar = \n{P.mean(axis=(2,3,4))}')
     print(f'=> load inc {inc+1} done with {newton_i} newton iter!')
 
 print("##################### sim run done! #####################")
