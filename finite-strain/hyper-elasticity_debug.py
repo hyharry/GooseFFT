@@ -184,8 +184,14 @@ def G_dbg(A2, M_bc):
 
 G_K_dF_dbg = lambda dFm, M_bc : G_dbg(K_dF(dFm), M_bc)
 
-def formResidual(F, P_aim):
-    tmp = K_dF(F)
+#  def formResidual(F, P_aim):
+#      """
+#      F: field variable 3,3,nx,ny,nz
+#      P_aim: 3,3
+#      """
+#      tmp = K_dF(F)
+
+dummy_zero = np.zeros([ndim,ndim,Nx,Ny,Nz])
 
 from functools import partial
 
@@ -198,14 +204,22 @@ dt = t/N
 print("##################### sim run start #####################")
 
 for inc in range(N):
-    print(f"------------- inc {inc} ------------")
-    DbarF_curr = DbarF + dt * dot_F[:,:,np.newaxis,np.newaxis,np.newaxis]
+    print(f"------------- inc {inc+1} ------------")
+    DbarF_curr = dummy_zero + dt * dot_F[:,:,np.newaxis,np.newaxis,np.newaxis]
     barP_curr = barP + (inc+1) * delta_P[:,:,np.newaxis,np.newaxis,np.newaxis]
 
     # initial residual: distribute "barF" over grid using "K4"
-    tmp = K_dF(DbarF_curr)
-    b     = -G_K_dF(DbarF_curr) + G(barP_curr)
+    ### !!! this is bad order, bad initi F !!! ###
+    # F    +=         DbarF_curr
+    # b     = -G_K_dF(F) + G(barP_curr)
+    ##############################################
+    ## op 1
+    # b     = -G_K_dF(DbarF_curr) + G(barP_curr)
+    # F    +=         DbarF_curr
+    ## op 2 -> better
     F    +=         DbarF_curr
+    P,_   = constitutive(F)
+    b     = -G(P) + G(barP_curr)
     Fn    = np.linalg.norm(F)
     newton_i = 0
     ksp_i = [0]
@@ -224,12 +238,12 @@ for inc in range(N):
         b     = -G(P) + G(barP_curr)
 
         # ^^^^^^^^^ dbg purpose ^^^^^^^^^
-        b_mean = b.reshape(ndim,ndim,Nx,Ny,Nz).mean(axis=(2,3,4))
-        Pav_Paim = P.mean(axis=(2,3,4))-barP_curr.mean(axis=(2,3,4))
-        print('P_aim', barP_curr.mean(axis=(2,3,4)))
-        print('P_av', P.mean(axis=(2,3,4)))
-        b_dbg = -G_dbg(P-barP_curr, Pav_Paim)
-        print(np.linalg.norm(b - b_dbg))
+        # b_mean = b.reshape(ndim,ndim,Nx,Ny,Nz).mean(axis=(2,3,4))
+        # Pav_Paim = P.mean(axis=(2,3,4))-barP_curr.mean(axis=(2,3,4))
+        # print('P_aim', barP_curr.mean(axis=(2,3,4)))
+        # print('P_av', P.mean(axis=(2,3,4)))
+        # b_dbg = -G_dbg(P-barP_curr, Pav_Paim)
+        # print(np.linalg.norm(b - b_dbg))
         #print(check(P.mean(axis=(2,3,4))-barP_curr.mean(axis=(2,3,4)))/1e6)
         #print((P.mean(axis=(2,3,4))-barP_curr.mean(axis=(2,3,4)))/1e6)
 
@@ -240,7 +254,7 @@ for inc in range(N):
         if np.linalg.norm(dFm)/Fn<1.e-5 : break # check convergence
     
     # print(f'current F_bar = \n{F.mean(axis=(2,3,4))}')
-    print(f'current P_bar = \n{P.mean(axis=(2,3,4))}')
+    # print(f'current P_bar = \n{P.mean(axis=(2,3,4))}')
     print(f'=> load inc {inc+1} done with {newton_i} newton iter!')
 
 print("##################### sim run done! #####################")
