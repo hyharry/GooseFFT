@@ -64,6 +64,8 @@ norm[Z] = 0.
 for i, j, l, m in itertools.product(range(3), repeat=4):
     Ghat4[i,j,l,m] = norm*delta(i,m)*q[j]*q[l]
 
+Ghat4_orig = Ghat4.copy()
+
 # (inverse) Fourier transform (for each tensor component in each direction)
 fft  = lambda x: np.fft.fftshift(np.fft.fftn (np.fft.ifftshift(x),[Nx,Ny,Nz]))
 ifft = lambda x: np.fft.fftshift(np.fft.ifftn(np.fft.ifftshift(x),[Nx,Ny,Nz]))
@@ -185,9 +187,12 @@ def G_dbg(A2, M_bc):
 G_K_dF_dbg = lambda dFm, M_bc : G_dbg(K_dF(dFm), M_bc)
 
 def G_conv(P, P_aim):
-    tmp = ddot42(Ghat4,fft(P))
-    tmp[:,:,Nx//2,Ny//2,Nz//2] = P_aim
+    tmp = ddot42(Ghat4_orig,fft(P))
+    tmp[:,:,Nx//2,Ny//2,Nz//2] = P_aim*Nx*Ny*Nz
     return np.real( ifft( tmp ) ).reshape(-1)
+
+print(G_conv(P,delta_P))
+# G = lambda A2 : np.real( ifft( ddot42(Ghat4,fft(A2)) ) ).reshape(-1)
 
 def formResidual(F, P_aim):
     """
@@ -202,8 +207,8 @@ def formJacobian(dF, K_curr, dP_with_bc):
     dP = trans2(ddot42(K_curr,trans2(dF.reshape(3,3,Nx,Ny,Nz))))
     return G_conv(dP, dP_with_bc)
 
-F_dbg = F.copy()
-P_dbg = P.copy()
+F_1 = F.copy()
+P_1 = P.copy()
 
 
 from functools import partial
@@ -220,12 +225,22 @@ for inc in range(N):
     print(f"------------- inc {inc+1} ------------")
     DbarF_curr = DbarF + dt * dot_F[:,:,np.newaxis,np.newaxis,np.newaxis]
     barP_curr = barP + (inc+1) * delta_P[:,:,np.newaxis,np.newaxis,np.newaxis]
+    barP_curr1 = (inc+1) * delta_P
 
     # initial residual: distribute "barF" over grid using "K4"
     F    +=         DbarF_curr
     P,K4  = constitutive(F)
-    b     = -G(P) + G(barP_curr)
+    # b     = -G(P) + G(barP_curr)
+    b     = -G(P - barP_curr)
+
+    F_1  += DbarF_curr
+    tmp,K4_1 = formResidual(F,barP_curr1)
+    b1 = -tmp
+    print(f'|b-b1| = {np.linalg.norm(b-b1)}')
+
     Fn    = np.linalg.norm(F)
+    Fn_1  = np.linalg.norm(F_1)
+
     newton_i = 0
     ksp_i = [0]
 
@@ -243,12 +258,12 @@ for inc in range(N):
         b     = -G(P) + G(barP_curr)
 
         # ^^^^^^^^^ dbg purpose ^^^^^^^^^
-        b_mean = b.reshape(ndim,ndim,Nx,Ny,Nz).mean(axis=(2,3,4))
-        Pav_Paim = P.mean(axis=(2,3,4))-barP_curr.mean(axis=(2,3,4))
-        print('P_aim', barP_curr.mean(axis=(2,3,4)))
-        print('P_av', P.mean(axis=(2,3,4)))
-        b_dbg = -G_dbg(P-barP_curr, Pav_Paim)
-        print(np.linalg.norm(b - b_dbg))
+        #b_mean = b.reshape(ndim,ndim,Nx,Ny,Nz).mean(axis=(2,3,4))
+        #Pav_Paim = P.mean(axis=(2,3,4))-barP_curr.mean(axis=(2,3,4))
+        #print('P_aim', barP_curr.mean(axis=(2,3,4)))
+        #print('P_av', P.mean(axis=(2,3,4)))
+        #b_dbg = -G_dbg(P-barP_curr, Pav_Paim)
+        #print(np.linalg.norm(b - b_dbg))
         #print(check(P.mean(axis=(2,3,4))-barP_curr.mean(axis=(2,3,4)))/1e6)
         #print((P.mean(axis=(2,3,4))-barP_curr.mean(axis=(2,3,4)))/1e6)
 
@@ -259,7 +274,7 @@ for inc in range(N):
         if np.linalg.norm(dFm)/Fn<1.e-5 : break # check convergence
     
     # print(f'current F_bar = \n{F.mean(axis=(2,3,4))}')
-    print(f'current P_bar = \n{P.mean(axis=(2,3,4))}')
+    # print(f'current P_bar = \n{P.mean(axis=(2,3,4))}')
     print(f'=> load inc {inc+1} done with {newton_i} newton iter!')
 
 print("##################### sim run done! #####################")
