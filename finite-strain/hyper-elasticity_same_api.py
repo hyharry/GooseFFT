@@ -191,7 +191,7 @@ def G_conv(P, P_aim):
     tmp[:,:,Nx//2,Ny//2,Nz//2] = P_aim*Nx*Ny*Nz
     return np.real( ifft( tmp ) ).reshape(-1)
 
-print(G_conv(P,delta_P))
+
 # G = lambda A2 : np.real( ifft( ddot42(Ghat4,fft(A2)) ) ).reshape(-1)
 
 def formResidual(F, P_aim):
@@ -203,9 +203,39 @@ def formResidual(F, P_aim):
     P_av = P.mean(axis=(2,3,4))
     return G_conv(P, P_av - P_aim), K_curr
 
-def formJacobian(dF, K_curr, dP_with_bc):
+def dbg_formResidual(F, P_aim):
+    P, K4 = constitutive(F)
+    ref = G(P - P_aim[:,:,np.newaxis,np.newaxis,np.newaxis])
+    dam,_ = formResidual(F, P_aim)
+    diff = np.linalg.norm(dam-ref)
+    if diff < 1e-3:
+        sig = 'OK'
+    else:
+        sig = 'not OK'
+    print(f'curr diff for formResidual = {diff} \t {sig}')
+
+# K_dF   = lambda dFm: trans2(ddot42(K4,trans2(dFm.reshape(3,3,Nx,Ny,Nz))))
+# G_K_dF = lambda dFm: G(K_dF(dFm))
+
+def formJacobian(dF, K_curr):
     dP = trans2(ddot42(K_curr,trans2(dF.reshape(3,3,Nx,Ny,Nz))))
+    # dP = ddot42(K_curr,trans2(dF.reshape(3,3,Nx,Ny,Nz)))
+    dP_with_bc = dP.mean(axis=(2,3,4)) ## !!!!!!! formJac should not set aim!
     return G_conv(dP, dP_with_bc)
+
+def dbg_formJacobian(dF, K_curr):
+    ref = G_K_dF(dF)
+    # dP_with_bc = np.zeros((3,3))
+    ref_dP_with_bc = ref.reshape(3,3,Nx,Ny,Nz).mean(axis=(2,3,4))
+    # dP_with_bc = ref_dP_with_bc
+    # __import__('pdb').set_trace()
+    dam = formJacobian(dF, K_curr)
+    diff = np.linalg.norm(dam-ref)
+    if diff < 1e-3:
+        sig = 'OK'
+    else:
+        sig = 'not OK'
+    print(f'curr diff for formJacobian = {diff:.3e} \t {sig}')
 
 F_1 = F.copy()
 P_1 = P.copy()
@@ -225,21 +255,27 @@ for inc in range(N):
     print(f"------------- inc {inc+1} ------------")
     DbarF_curr = DbarF + dt * dot_F[:,:,np.newaxis,np.newaxis,np.newaxis]
     barP_curr = barP + (inc+1) * delta_P[:,:,np.newaxis,np.newaxis,np.newaxis]
-    barP_curr1 = (inc+1) * delta_P
+    barP_curr_1 = (inc+1) * delta_P
 
     # initial residual: distribute "barF" over grid using "K4"
     F    +=         DbarF_curr
     P,K4  = constitutive(F)
     # b     = -G(P) + G(barP_curr)
     b     = -G(P - barP_curr)
+    # dbg_formResidual(F,barP_curr_1)
 
     F_1  += DbarF_curr
-    tmp,K4_1 = formResidual(F,barP_curr1)
-    b1 = -tmp
-    print(f'|b-b1| = {np.linalg.norm(b-b1)}')
+    # tmp,K4_1 = formResidual(F_1,barP_curr_1)
+    tmp,K4_1 = formResidual(F,barP_curr_1)
+    b_1 = -tmp
+    print(f'|b-b1| = {np.linalg.norm(b-b_1)}')
+    # P_1,_ = constitutive(F_1)
+    # dP_with_bc = -(P_1.mean(axis=(2,3,4,)) - barP_curr_1)
 
     Fn    = np.linalg.norm(F)
     Fn_1  = np.linalg.norm(F_1)
+
+    test = G_K_dF(F)
 
     newton_i = 0
     ksp_i = [0]
@@ -256,6 +292,32 @@ for inc in range(N):
         P,K4  = constitutive(F)                  # new residual stress and tangent
         # b     = -G(P)                            # convert res.stress to residual
         b     = -G(P) + G(barP_curr)
+
+        # dbg_formResidual(F, barP_curr_1)
+
+        # dP_with_bc = P.mean(axis=(2,3,4,)) - barP_curr_1
+        # dP_with_bc = P.mean(axis=(2,3,4,)) 
+        # dbg_formJacobian(dFm, K4)
+
+        # tmp = G_K_dF(F)
+        # tmp_1 = G_K_dF_1(F)
+        # print(f'tmp {np.linalg.norm(tmp-tmp_1)}')
+
+        G_K_dF_1 = partial(formJacobian, K_curr=K4_1)
+        dFm_1,_ = sp.cg(tol=1.e-8,
+        A = sp.LinearOperator(shape=(F_1.size,F_1.size),matvec=G_K_dF_1,dtype='float'),
+        b = b_1,
+        callback=ksp_callback, #### cg counter
+        )                                        # solve linear system using CG
+        F_1    += dFm_1.reshape(ndim,ndim,Nx,Ny,Nz)  # update DOFs (array -> tens.grid)
+        P_1,K4_1  = constitutive(F_1)                  # new residual stress and tangent
+        dP_with_bc = (P_1.mean(axis=(2,3,4,)) - barP_curr_1)
+        #tmp,K4_1_tmp = formResidual(F_1,dP_with_bc)
+        tmp,K4_1_tmp = formResidual(F_1,barP_curr_1)
+        b_1 = -tmp
+
+        print(np.linalg.norm(F-F_1))
+        print(np.linalg.norm(b-b_1))
 
         # ^^^^^^^^^ dbg purpose ^^^^^^^^^
         #b_mean = b.reshape(ndim,ndim,Nx,Ny,Nz).mean(axis=(2,3,4))
