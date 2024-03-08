@@ -11,9 +11,9 @@ Nx = 3
 Ny = 3
 Nz = 3
 
-# Nx = 5
-# Ny = 5
-# Nz = 5
+Nx = 5
+Ny = 5
+Nz = 3
 shape  = [Nx,Ny,Nz]  # number of voxels as list: [Nx,Ny,Nz]
 
 # ---------------------- PROJECTION, TENSORS, OPERATIONS ----------------------

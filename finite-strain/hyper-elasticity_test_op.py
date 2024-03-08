@@ -307,7 +307,7 @@ for inc in range(N):
         G_K_dF_x = lambda dF: G_K_dF(apply_precond(dF))
 
     # iterate as long as the iterative update does not vanish
-    while True:
+    while False:
         # if inc == 0:
         if True:
             dFm,_ = sp.cg(tol=1.e-8,
