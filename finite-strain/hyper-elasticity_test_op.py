@@ -104,56 +104,6 @@ ksp_i = [0] # hack for remember it_n during call
 def ksp_callback(xk):
     ksp_i[0] += 1
 
-##### bc_strain from DAMASK #####
-dot_F = np.array([
-    [0,0,0],
-    [0,1e-3,0],
-    [0,0,0]
-])
-
-##### bc_stress from DAMASK #####
-barP = np.zeros([ndim,ndim,Nx,Ny,Nz])
-dot_F = np.array([
-    [0,0,0],
-    [0,0,0],
-    [0,0,0]
-])
-
-delta_P_0 = 2.5e6
-delta_P_1 = 5.0e6
-delta_P_2 = 2.5e6
-delta_P = np.zeros((3,3))
-delta_P[0,0] = delta_P_0
-delta_P[1,1] = delta_P_1
-delta_P[2,2] = delta_P_2
-delta_P *= 100
-
-##### adjust zeroth frequency -> for all stress component! ij
-# for i, j, l, m in itertools.product(range(3), repeat=4):
-#     Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2] = delta(i,m)*delta(j,l)
-
-##### bc_mix from DAMASK #####
-barP = np.zeros([ndim,ndim,Nx,Ny,Nz])
-dot_F = np.array([
-    [0,0,0],
-    [0,1e-3,0],
-    [0,0,0]
-])
-
-delta_P_0 = 0
-delta_P_2 = 0
-delta_P = np.zeros((3,3))
-delta_P[0,0] = delta_P_0
-delta_P[2,2] = delta_P_2
-
-##### adjust zeroth frequency -> only change the component with ij defined by stress bc!!!
-# for i, j, l, m in itertools.product(range(3), repeat=4):
-#     if [i,j] == [0,0] or [i,j] == [2,2]:
-#         # print(f'change Ghat(q=0) for Ghat[{i},{j},{l},{m}]')
-#         # print(f'vor  Ghat[{i},{j},{l},{m}]={Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2]}')
-#         Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2] = delta(i,m)*delta(j,l)
-#         # print(f'nach Ghat[{i},{j},{l},{m}]={Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2]}')
-
 ##### bc_debug for DAMASK #####
 barP = np.zeros([ndim,ndim,Nx,Ny,Nz])
 dot_F = np.array([
@@ -197,15 +147,6 @@ dummy_zero = np.zeros([ndim,ndim,Nx,Ny,Nz])
 from functools import partial
 
 check = lambda dP: np.einsum('ijkl,lk->ij', Ghat4[:,:,:,:,1,1,1].reshape((3,3,3,3)), dP)
-
-# G      = lambda A2 : np.real( ifft( ddot42(Ghat4,fft(A2)) ) ).reshape(-1)
-# K_dF   = lambda dFm: trans2(ddot42(K4,trans2(dFm.reshape(3,3,Nx,Ny,Nz))))
-# G_K_dF = lambda dFm: G(K_dF(dFm))
-
-def K_G_dF(dF): # != G_K_dF(dF)
-    G_dF = np.real( ifft( ddot42(Ghat4,fft(dF.reshape(ndim,ndim,Nx,Ny,Nz))) ) )
-    result = K_dF(G_dF).reshape(-1)
-    return result
 
 pairs = {0: (0, 0), 1: (1, 1), 2: (2, 2),
          3: (1, 2), 4: (2, 0), 5: (0, 1),
@@ -265,12 +206,11 @@ def det_K(K4):
     result = result.reshape((-1,Nx,Ny,Nz))
     return result
 
-#print(K4.shape)
 
 # precond = inv_K(K4)
 # apply_precond = lambda dF: np.einsum('ijklxyz,klxyz ->ijxyz',precond,dF)
-# 
-# G_K_dF_x = lambda dF: G_K_dF(apply_precond(dF))
+
+G_K_dF_x = lambda dF: G_K_dF(apply_precond(dF))
 
 t = 0.4
 N = 8 
@@ -283,15 +223,6 @@ for inc in range(N):
     DbarF_curr = dummy_zero + dt * dot_F[:,:,np.newaxis,np.newaxis,np.newaxis]
     barP_curr = barP + (inc+1) * delta_P[:,:,np.newaxis,np.newaxis,np.newaxis]
 
-    # initial residual: distribute "barF" over grid using "K4"
-    ### !!! this is bad order, bad initi F !!! ###
-    # F    +=         DbarF_curr
-    # b     = -G_K_dF(F) + G(barP_curr)
-    ##############################################
-    ## op 1
-    # b     = -G_K_dF(DbarF_curr) + G(barP_curr)
-    # F    +=         DbarF_curr
-    ## op 2 -> better
     F    +=         DbarF_curr
     P,K4  = constitutive(F)
     b     = -G(P) + G(barP_curr)
@@ -307,7 +238,7 @@ for inc in range(N):
         G_K_dF_x = lambda dF: G_K_dF(apply_precond(dF))
 
     # iterate as long as the iterative update does not vanish
-    while False:
+    while True:
         # if inc == 0:
         if True:
             dFm,_ = sp.cg(tol=1.e-8,
@@ -358,7 +289,7 @@ for inc in range(N):
         if np.linalg.norm(dFm)/Fn<1.e-5 : break # check convergence
     
     # print(f'current F_bar = \n{F.mean(axis=(2,3,4))}')
-    print(f'current P_bar = \n{P.mean(axis=(2,3,4))}')
+    # print(f'current P_bar = \n{P.mean(axis=(2,3,4))}')
     print(f'=> load inc {inc+1} done with {newton_i} newton iter!')
 
 print("##################### sim run done! #####################")
