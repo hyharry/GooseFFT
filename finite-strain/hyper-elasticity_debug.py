@@ -11,9 +11,9 @@ Nx = 3
 Ny = 3
 Nz = 3
 
-Nx = 9
-Ny = 11
-Nz = 13
+# Nx = 9
+# Ny = 11
+# Nz = 13
 shape  = [Nx,Ny,Nz]  # number of voxels as list: [Nx,Ny,Nz]
 
 # ---------------------- PROJECTION, TENSORS, OPERATIONS ----------------------
@@ -253,8 +253,8 @@ for inc in range(N):
         print(f'newton {newton_i} end: |dF|/|F| = {dF_norm_rel:8.2e}, |rhs| = |G(P)| = {rhs_norm:8.2e}, ksp iter = {ksp_i[0]}')
         if np.linalg.norm(dFm)/Fn<1.e-5 : break # check convergence
     
-    # print(f'current F_bar = \n{F.mean(axis=(2,3,4))}')
-    # print(f'current P_bar = \n{P.mean(axis=(2,3,4))}')
+    print(f'current F_bar = \n{F.mean(axis=(2,3,4))}')
+    print(f'current P_bar = \n{P.mean(axis=(2,3,4))}')
     print(f'=> load inc {inc+1} done with {newton_i} newton iter!')
 
 print("##################### sim run done! #####################")

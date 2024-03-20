@@ -82,8 +82,10 @@ phase  = np.zeros(shape); phase[1,1,1] = 1.  # Y: single vox incl at center of 3
 param  = lambda M0,M1: M0*np.ones(shape)*(1.-phase)+M1*np.ones(shape)*phase
 # K      = param(0.833,8.33)  # bulk  modulus                   [grid of scalars]
 # mu     = param(0.386,3.86)  # shear modulus                   [grid of scalars]
-K      = param(70e9,70e8)  # bulk  modulus                   approx. Alu
-mu     = param(25e9,25e8)  # shear modulus                   approx. Alu
+# K      = param(70e9,70e8)  # bulk  modulus                   approx. Alu
+# mu     = param(25e9,25e8)  # shear modulus                   approx. Alu
+K      = param(70e3,70e2)  # bulk  modulus                   approx. Alu
+mu     = param(25e2,25e2)  # shear modulus                   approx. Alu
 
 # constitutive model: grid of "F" -> grid of "P", "K4"        [grid of tensors]
 def constitutive(F):
@@ -111,19 +113,20 @@ dot_F = np.array([
     [0,0,0],
     [0,0,0]
 ])
+dot_F[0,1] = 1e-3
 
-delta_P_0 = 2.5e6
-delta_P_1 = 5.0e6
-delta_P_2 = 2.5e6
+delta_P_0 = 2.5
+delta_P_1 = 5.0
+delta_P_2 = 2.5
 delta_P = np.zeros((3,3))
 delta_P[0,0] = delta_P_0
 delta_P[1,1] = delta_P_1
 delta_P[2,2] = delta_P_2
-delta_P[0,1] = delta_P_0
+# delta_P[0,1] = delta_P_0
 
 ##### adjust zeroth frequency -> for all stress component! ij
 for i, j, l, m in itertools.product(range(3), repeat=4):
-    if [i,j] == [0,0] or [i,j] == [1,1] or [i,j] == [2,2] or [i,j] == [0,1]:
+    if [i,j] == [0,0] or [i,j] == [1,1] or [i,j] == [2,2]: # or [i,j] == [0,1]:
         Ghat4[i,j,l,m,Nx//2,Ny//2,Nz//2] = delta(i,m)*delta(j,l)
 
 ##### debug purpose (DAMASK G_conv) #####
@@ -135,18 +138,9 @@ def G_dbg(A2, M_bc):
 
 G_K_dF_dbg = lambda dFm, M_bc : G_dbg(K_dF(dFm), M_bc)
 
-#  def formResidual(F, P_aim):
-#      """
-#      F: field variable 3,3,nx,ny,nz
-#      P_aim: 3,3
-#      """
-#      tmp = K_dF(F)
-
 dummy_zero = np.zeros([ndim,ndim,Nx,Ny,Nz])
 
 from functools import partial
-
-check = lambda dP: np.einsum('ijkl,lk->ij', Ghat4[:,:,:,:,1,1,1].reshape((3,3,3,3)), dP)
 
 pairs = {0: (0, 0), 1: (1, 1), 2: (2, 2),
          3: (1, 2), 4: (2, 0), 5: (0, 1),
@@ -175,6 +169,8 @@ def tensor_flat_inv(vec):
     M_inv = np.linalg.inv(M)
     # M_inv = np.linalg.pinv(M)
     result = m99_2_tensor(M_inv)
+    # print(np.linalg.det(M))
+    print(np.linalg.cond(M))
     return result
 
 def tensor_flat_det(vec):
@@ -207,13 +203,17 @@ def det_K(K4):
     return result
 
 
-# precond = inv_K(K4)
-# apply_precond = lambda dF: np.einsum('ijklxyz,klxyz ->ijxyz',precond,dF)
+# __import__('pdb').set_trace()
+#precond = inv_K(K4)
+#apply_precond = lambda dF: np.einsum('ijklxyz,klxyz ->ijxyz',precond,dF)
 
+apply_precond = lambda dF: np.einsum('ijklxyz,klxyz ->ijxyz',precond,dF.reshape((ndim,ndim,Nx,Ny,Nz)))
 G_K_dF_x = lambda dF: G_K_dF(apply_precond(dF))
 
 t = 0.4
 N = 8 
+t = 0.1
+N = 2 
 dt = t/N
 
 print("##################### sim run start #####################")
@@ -223,7 +223,7 @@ for inc in range(N):
     DbarF_curr = dummy_zero + dt * dot_F[:,:,np.newaxis,np.newaxis,np.newaxis]
     barP_curr = barP + (inc+1) * delta_P[:,:,np.newaxis,np.newaxis,np.newaxis]
 
-    F    +=         DbarF_curr
+    F    += DbarF_curr
     P,K4  = constitutive(F)
     b     = -G(P) + G(barP_curr)
     Fn    = np.linalg.norm(F)
@@ -233,14 +233,17 @@ for inc in range(N):
     # tmp = det_K(K4)
     # print(np.isclose(tmp, 0))
     if inc > 0:
+        print('!!! build precon')
         precond = inv_K(K4)
+        test = np.matmul(tensor_2_m99(precond[:,:,:,:,1,1,0]) , tensor_2_m99(K4[:,:,:,:,1,1,0]))
+        print(test)
         apply_precond = lambda dF: np.einsum('ijklxyz,klxyz ->ijxyz',precond,dF.reshape((ndim,ndim,Nx,Ny,Nz)))
         G_K_dF_x = lambda dF: G_K_dF(apply_precond(dF))
 
     # iterate as long as the iterative update does not vanish
     while True:
-        # if inc == 0:
-        if True:
+        if False or inc == 0:
+        #if True:
             dFm,_ = sp.cg(tol=1.e-8,
             #dFm,_ = sp.gmres(tol=1.e-8,
             A = sp.LinearOperator(shape=(F.size,F.size),matvec=G_K_dF,dtype='float'),
@@ -249,12 +252,13 @@ for inc in range(N):
             )                                        # solve linear system using CG
             F    += dFm.reshape(ndim,ndim,Nx,Ny,Nz)  # update DOFs (array -> tens.grid)
         else:
-            dFm,_ = sp.cg(tol=1.e-8,
-            #dFm,_ = sp.gmres(tol=1.e-8,
+            #dFm,_ = sp.cg(tol=1.e-8,
+            dFm,_ = sp.gmres(tol=1.e-8,
             A = sp.LinearOperator(shape=(F.size,F.size),matvec=G_K_dF_x,dtype='float'),
             b = b,
             callback=ksp_callback, #### cg counter
             )                                        # solve linear system using CG
+            print('gmres converge')
             F    += apply_precond(dFm.reshape(ndim,ndim,Nx,Ny,Nz))
         P,K4  = constitutive(F)                  # new residual stress and tangent
         # b     = -G(P)                            # convert res.stress to residual
@@ -288,8 +292,8 @@ for inc in range(N):
         print(f'newton {newton_i} end: |dF|/|F| = {dF_norm_rel:8.2e}, |rhs| = |G(P)| = {rhs_norm:8.2e}, ksp iter = {ksp_i[0]}')
         if np.linalg.norm(dFm)/Fn<1.e-5 : break # check convergence
     
-    # print(f'current F_bar = \n{F.mean(axis=(2,3,4))}')
-    # print(f'current P_bar = \n{P.mean(axis=(2,3,4))}')
+    print(f'current F_bar = \n{F.mean(axis=(2,3,4))}')
+    print(f'current P_bar = \n{P.mean(axis=(2,3,4))}')
     print(f'=> load inc {inc+1} done with {newton_i} newton iter!')
 
 print("##################### sim run done! #####################")
