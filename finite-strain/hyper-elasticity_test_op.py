@@ -165,12 +165,15 @@ def m99_2_tensor(M):
 
 def tensor_flat_inv(vec):
     C_3333 = vec.reshape((3,3,3,3))
-    M = tensor_2_m99(C_3333)
-    M_inv = np.linalg.inv(M)
-    # M_inv = np.linalg.pinv(M)
+    M = tensor_2_m99(C_3333) # + np.eye(9)*1e5
+    # with np.printoptions(formatter={'float': '{: 0.3e}'.format}, suppress=False) :
+    with np.printoptions(precision=3, suppress=True, linewidth=200) :
+        print(M)
+    # M_inv = np.linalg.inv(M+np.eye(9)*1e4)
+    M_inv = np.linalg.pinv(M)
     result = m99_2_tensor(M_inv)
     # print(np.linalg.det(M))
-    print(np.linalg.cond(M))
+    # print(np.linalg.cond(M))
     return result
 
 def tensor_flat_det(vec):
