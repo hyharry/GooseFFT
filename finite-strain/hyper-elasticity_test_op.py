@@ -142,36 +142,20 @@ dummy_zero = np.zeros([ndim,ndim,Nx,Ny,Nz])
 
 from functools import partial
 
-pairs = {0: (0, 0), 1: (1, 1), 2: (2, 2),
-         3: (1, 2), 4: (2, 0), 5: (0, 1),
-         6: (2, 1), 7: (0, 2), 8: (1, 0)}
-inv_pairs = {v: k for k, v in pairs.items()}
-
-def tensor_2_m99(C_3333):
-    M = np.zeros((9,9))
-    for i,j,k,l in itertools.product(range(3), repeat=4):
-        ij = inv_pairs[(i,j)]
-        kl = inv_pairs[(k,l)]
-        M[ij,kl] = C_3333[i,j,k,l]
-    return M
-
-def m99_2_tensor(M):
-    C_3333 = np.zeros((3,3,3,3))
-    for i,j,k,l in itertools.product(range(3), repeat=4):
-        ij = inv_pairs[(i,j)]
-        kl = inv_pairs[(k,l)]
-        M[ij,kl] = C_3333[i,j,k,l]
-    return C_3333
+from mat_ten import m99_2_tensor, tensor_2_m99, tensor_2_m66_crop, m66_2_tensor
 
 def tensor_flat_inv(vec):
     C_3333 = vec.reshape((3,3,3,3))
-    M = tensor_2_m99(C_3333) # + np.eye(9)*1e5
+    # M = tensor_2_m99(C_3333) # + np.eye(9)*1e5
+    M = tensor_2_m66_crop(C_3333)
     # with np.printoptions(formatter={'float': '{: 0.3e}'.format}, suppress=False) :
-    with np.printoptions(precision=3, suppress=True, linewidth=200) :
-        print(M)
+    #with np.printoptions(precision=3, suppress=True, linewidth=200) :
+    #    print(M)
     # M_inv = np.linalg.inv(M+np.eye(9)*1e4)
-    M_inv = np.linalg.pinv(M)
-    result = m99_2_tensor(M_inv)
+    M_inv = np.linalg.inv(M)
+    # M_inv = np.linalg.pinv(M)
+    # result = m99_2_tensor(M_inv)
+    result = m66_2_tensor(M_inv)
     # print(np.linalg.det(M))
     # print(np.linalg.cond(M))
     return result
@@ -210,13 +194,24 @@ def det_K(K4):
 #precond = inv_K(K4)
 #apply_precond = lambda dF: np.einsum('ijklxyz,klxyz ->ijxyz',precond,dF)
 
+#precond = inv_K(K4)
 apply_precond = lambda dF: np.einsum('ijklxyz,klxyz ->ijxyz',precond,dF.reshape((ndim,ndim,Nx,Ny,Nz)))
 G_K_dF_x = lambda dF: G_K_dF(apply_precond(dF))
 
+def right_precondition(opertor):
+    def preconditioned(dF):
+        return G_K_dF_x(dF)
+    return preconditioned
+
+def G_K_dF_precond(dF, K4):
+    precond = inv_K(K4)
+    tmp = np.einsum('ijklxyz,klxyz ->ijxyz',precond,dF.reshape((ndim,ndim,Nx,Ny,Nz)))
+    return G_K_dF(tmp)
+
 t = 0.4
 N = 8 
-t = 0.1
-N = 2 
+#t = 0.1
+#N = 2 
 dt = t/N
 
 print("##################### sim run start #####################")
@@ -235,20 +230,25 @@ for inc in range(N):
 
     # tmp = det_K(K4)
     # print(np.isclose(tmp, 0))
-    if inc > 0:
+    # if inc > 0:
+    if True:
         print('!!! build precon')
         precond = inv_K(K4)
         test = np.matmul(tensor_2_m99(precond[:,:,:,:,1,1,0]) , tensor_2_m99(K4[:,:,:,:,1,1,0]))
-        print(test)
-        apply_precond = lambda dF: np.einsum('ijklxyz,klxyz ->ijxyz',precond,dF.reshape((ndim,ndim,Nx,Ny,Nz)))
+        with np.printoptions(precision=3, suppress=True, linewidth=200) :
+            print(test)
+        #apply_precond = lambda dF: np.einsum('ijklxyz,klxyz ->ijxyz',precond,dF.reshape((ndim,ndim,Nx,Ny,Nz)))
         G_K_dF_x = lambda dF: G_K_dF(apply_precond(dF))
+        # G_K_dF_x = partial(G_K_dF_precond, K4=K4)
 
     # iterate as long as the iterative update does not vanish
     while True:
-        if False or inc == 0:
-        #if True:
-            dFm,_ = sp.cg(tol=1.e-8,
-            #dFm,_ = sp.gmres(tol=1.e-8,
+        # if False or inc == 0:
+        # if False:
+        if newton_i == 0:
+            print('no precond')
+            #dFm,_ = sp.cg(tol=1.e-8,
+            dFm,_ = sp.gmres(tol=1.e-8,
             A = sp.LinearOperator(shape=(F.size,F.size),matvec=G_K_dF,dtype='float'),
             b = b,
             callback=ksp_callback, #### cg counter
@@ -261,11 +261,14 @@ for inc in range(N):
             b = b,
             callback=ksp_callback, #### cg counter
             )                                        # solve linear system using CG
-            print('gmres converge')
             F    += apply_precond(dFm.reshape(ndim,ndim,Nx,Ny,Nz))
         P,K4  = constitutive(F)                  # new residual stress and tangent
         # b     = -G(P)                            # convert res.stress to residual
-        b     = -G(P) + G(barP_curr)
+        b     = -G(P - barP_curr)
+
+        # G_K_dF_x = partial(G_K_dF_precond, K4=K4)
+
+        # precond = inv_K(K4)
 
         # tmp = inv_K(K4)
         # print(tmp.shape)
@@ -295,7 +298,7 @@ for inc in range(N):
         print(f'newton {newton_i} end: |dF|/|F| = {dF_norm_rel:8.2e}, |rhs| = |G(P)| = {rhs_norm:8.2e}, ksp iter = {ksp_i[0]}')
         if np.linalg.norm(dFm)/Fn<1.e-5 : break # check convergence
     
-    print(f'current F_bar = \n{F.mean(axis=(2,3,4))}')
+    # print(f'current F_bar = \n{F.mean(axis=(2,3,4))}')
     print(f'current P_bar = \n{P.mean(axis=(2,3,4))}')
     print(f'=> load inc {inc+1} done with {newton_i} newton iter!')
 
