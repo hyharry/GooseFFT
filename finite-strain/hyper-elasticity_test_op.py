@@ -11,9 +11,9 @@ Nx = 3
 Ny = 3
 Nz = 3
 
-# Nx = 5
-# Ny = 5
-# Nz = 5
+Nx = 15
+Ny = 15
+Nz = 15
 shape  = [Nx,Ny,Nz]  # number of voxels as list: [Nx,Ny,Nz]
 
 # ---------------------- PROJECTION, TENSORS, OPERATIONS ----------------------
@@ -76,8 +76,8 @@ G_K_dF = lambda dFm: G(K_dF(dFm))
 # ------------------- PROBLEM DEFINITION / CONSTITIVE MODEL -------------------
 
 # phase indicator: cubical inclusion of volume fraction (9**3)/(31**3)
-# phase  = np.zeros([N,N,N]); phase[-9:,:9,-9:] = 1.
-phase  = np.zeros(shape); phase[1,1,1] = 1.  # Y: single vox incl at center of 3x3x3
+phase  = np.zeros(shape); phase[-9:,:9,-9:] = 1.
+#phase  = np.zeros(shape); phase[1,1,1] = 1.  # Y: single vox incl at center of 3x3x3
 # material parameters + function to convert to grid of scalars
 param  = lambda M0,M1: M0*np.ones(shape)*(1.-phase)+M1*np.ones(shape)*phase
 # K      = param(0.833,8.33)  # bulk  modulus                   [grid of scalars]
@@ -142,22 +142,12 @@ dummy_zero = np.zeros([ndim,ndim,Nx,Ny,Nz])
 
 from functools import partial
 
-from mat_ten import m99_2_tensor, tensor_2_m99, tensor_2_m66_crop, m66_2_tensor
+from mat_ten import m99_2_tensor, tensor_2_m99, stiffness_2_compliance_3333
 
 def tensor_flat_inv(vec):
     C_3333 = vec.reshape((3,3,3,3))
-    # M = tensor_2_m99(C_3333) # + np.eye(9)*1e5
-    M = tensor_2_m66_crop(C_3333)
-    # with np.printoptions(formatter={'float': '{: 0.3e}'.format}, suppress=False) :
-    #with np.printoptions(precision=3, suppress=True, linewidth=200) :
-    #    print(M)
-    # M_inv = np.linalg.inv(M+np.eye(9)*1e4)
-    M_inv = np.linalg.inv(M)
-    # M_inv = np.linalg.pinv(M)
-    # result = m99_2_tensor(M_inv)
-    result = m66_2_tensor(M_inv)
-    # print(np.linalg.det(M))
-    # print(np.linalg.cond(M))
+    # result = stiffness_2_compliance_3333(C_3333)
+    result = stiffness_2_compliance_3333(C_3333, opt='general')
     return result
 
 def tensor_flat_det(vec):
@@ -198,6 +188,8 @@ def det_K(K4):
 apply_precond = lambda dF: np.einsum('ijklxyz,klxyz ->ijxyz',precond,dF.reshape((ndim,ndim,Nx,Ny,Nz)))
 G_K_dF_x = lambda dF: G_K_dF(apply_precond(dF))
 
+print(K4.shape)
+
 def right_precondition(opertor):
     def preconditioned(dF):
         return G_K_dF_x(dF)
@@ -210,8 +202,8 @@ def G_K_dF_precond(dF, K4):
 
 t = 0.4
 N = 8 
-#t = 0.1
-#N = 2 
+# t = 0.1
+# N = 2 
 dt = t/N
 
 print("##################### sim run start #####################")
@@ -234,9 +226,9 @@ for inc in range(N):
     if True:
         print('!!! build precon')
         precond = inv_K(K4)
-        test = np.matmul(tensor_2_m99(precond[:,:,:,:,1,1,0]) , tensor_2_m99(K4[:,:,:,:,1,1,0]))
-        with np.printoptions(precision=3, suppress=True, linewidth=200) :
-            print(test)
+        #test = np.matmul(tensor_2_m99(precond[:,:,:,:,1,1,0]) , tensor_2_m99(K4[:,:,:,:,1,1,0]))
+        #with np.printoptions(precision=3, suppress=True, linewidth=200) :
+        #    print(test)
         #apply_precond = lambda dF: np.einsum('ijklxyz,klxyz ->ijxyz',precond,dF.reshape((ndim,ndim,Nx,Ny,Nz)))
         G_K_dF_x = lambda dF: G_K_dF(apply_precond(dF))
         # G_K_dF_x = partial(G_K_dF_precond, K4=K4)
@@ -244,8 +236,9 @@ for inc in range(N):
     # iterate as long as the iterative update does not vanish
     while True:
         # if False or inc == 0:
-        # if False:
-        if newton_i == 0:
+        if False:
+        #if True:
+        # if newton_i == 0:
             print('no precond')
             #dFm,_ = sp.cg(tol=1.e-8,
             dFm,_ = sp.gmres(tol=1.e-8,
@@ -296,7 +289,9 @@ for inc in range(N):
         rhs_norm = np.linalg.norm(b)
         newton_i += 1
         print(f'newton {newton_i} end: |dF|/|F| = {dF_norm_rel:8.2e}, |rhs| = |G(P)| = {rhs_norm:8.2e}, ksp iter = {ksp_i[0]}')
+        # if np.linalg.norm(dFm)/Fn<1.e-5 and newton_i>1 : break # check convergence
         if np.linalg.norm(dFm)/Fn<1.e-5 : break # check convergence
+        ksp_i = [0]
     
     # print(f'current F_bar = \n{F.mean(axis=(2,3,4))}')
     print(f'current P_bar = \n{P.mean(axis=(2,3,4))}')
